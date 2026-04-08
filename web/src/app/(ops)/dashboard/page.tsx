@@ -1,78 +1,214 @@
 import { MetricCard } from "@/components/metric-card";
 import { SectionCard } from "@/components/section-card";
+import { requireUser } from "@/lib/auth";
 import { formatKrw, formatPercent } from "@/lib/format";
 
-const metrics = [
-  {
-    titleKo: "활성 수입 배치",
-    titleEn: "Active Shipments",
-    value: "2 건",
-    hint: "In Tank 2건 · Pending Customs 0건",
-  },
-  {
-    titleKo: "현재고(전체)",
-    titleEn: "Live Stock",
-    value: "3,420 units",
-    hint: "먹장어 3,120 · 무라사키 300",
-  },
-  {
-    titleKo: "공급처 미지급",
-    titleEn: "Accounts Payable",
-    value: formatKrw(18350000),
-    hint: "DAIKEI 12.4M · DAIYUU 5.95M",
-  },
-  {
-    titleKo: "최근 30일 순이익률",
-    titleEn: "30-Day Net Margin",
-    value: formatPercent(5.4),
-    hint: "목표 6.0% 대비 -0.6%p",
-    tone: "warning" as const,
-  },
-];
+const statusKoMap: Record<string, string> = {
+  pending_customs: "통관 대기",
+  in_tank: "보관중",
+  partially_sold: "부분 판매",
+  completed: "완료",
+};
 
-const alerts = [
-  {
-    ko: "SHIP-2026-006 배치가 13일째 보관 중입니다.",
-    en: "SHIP-2026-006 has remained in tank for 13 days.",
-  },
-  {
-    ko: "최근 3개 배치 평균 마진이 2.3%로 하락했습니다.",
-    en: "Rolling 3-shipment margin has dropped to 2.3%.",
-  },
-  {
-    ko: "DAIYUU 미지급 잔액이 설정 기준을 초과했습니다.",
-    en: "DAIYUU payable balance exceeded configured threshold.",
-  },
-];
+const statusEnMap: Record<string, string> = {
+  pending_customs: "Pending Customs",
+  in_tank: "In Tank",
+  partially_sold: "Partially Sold",
+  completed: "Completed",
+};
 
-const shipmentRows = [
-  {
-    shipmentNo: "SHIP-2026-006",
-    supplier: "DAIKEI",
-    statusKo: "부분 판매",
-    statusEn: "Partially Sold",
-    margin: formatPercent(4.2),
-    stock: "780 units",
-  },
-  {
-    shipmentNo: "SHIP-2026-007",
-    supplier: "DAIYUU",
-    statusKo: "보관중",
-    statusEn: "In Tank",
-    margin: formatPercent(-1.1),
-    stock: "1,120 units",
-  },
-  {
-    shipmentNo: "SHIP-2026-008",
-    supplier: "DAIKEI",
-    statusKo: "통관 대기",
-    statusEn: "Pending Customs",
-    margin: "-",
-    stock: "-",
-  },
-];
+function toNumber(value: unknown) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
 
-export default function DashboardPage() {
+function summarizeInTankDays(intakeDate: string | null) {
+  if (!intakeDate) return null;
+  const today = new Date();
+  const intake = new Date(intakeDate);
+  const diffMs = today.getTime() - intake.getTime();
+  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  return days >= 0 ? days : 0;
+}
+
+export default async function DashboardPage() {
+  const { supabase } = await requireUser();
+
+  const today = new Date();
+  const agedCutoff = new Date(today);
+  agedCutoff.setDate(today.getDate() - 14);
+  const agedCutoffIso = agedCutoff.toISOString().slice(0, 10);
+
+  const [
+    shipmentStatusResult,
+    inventorySummaryResult,
+    supplierBalanceResult,
+    recentShipmentsResult,
+    financialSummaryResult,
+    agedShipmentsResult,
+  ] = await Promise.all([
+    supabase.from("shipments").select("status"),
+    supabase
+      .from("shipment_inventory_summary")
+      .select("shipment_id, remaining_qty, intake_qty, sold_qty, mortality_qty"),
+    supabase.from("supplier_balances").select("code, name_kr, outstanding_krw"),
+    supabase
+      .from("shipments")
+      .select("id, shipment_number, status, intake_date, suppliers(code, name_kr)")
+      .order("intake_date", { ascending: false })
+      .limit(6),
+    supabase
+      .from("shipment_financial_summary")
+      .select("shipment_id, net_margin_pct, net_profit_krw"),
+    supabase
+      .from("shipments")
+      .select("shipment_number, intake_date")
+      .in("status", ["in_tank", "partially_sold"])
+      .lte("intake_date", agedCutoffIso)
+      .order("intake_date", { ascending: true })
+      .limit(5),
+  ]);
+
+  const statusRows = shipmentStatusResult.data ?? [];
+  const activeStatusRows = statusRows.filter((row) => row.status !== "completed");
+  const inTankCount = statusRows.filter((row) => row.status === "in_tank").length;
+  const pendingCustomsCount = statusRows.filter(
+    (row) => row.status === "pending_customs",
+  ).length;
+
+  const inventoryRows = inventorySummaryResult.data ?? [];
+  const totalRemaining = inventoryRows.reduce(
+    (sum, row) => sum + toNumber(row.remaining_qty),
+    0,
+  );
+
+  const supplierBalances = (supplierBalanceResult.data ?? [])
+    .map((row) => ({
+      ...row,
+      outstanding: toNumber(row.outstanding_krw),
+    }))
+    .sort((a, b) => b.outstanding - a.outstanding);
+  const totalOutstanding = supplierBalances.reduce(
+    (sum, row) => sum + row.outstanding,
+    0,
+  );
+
+  const financialRows = financialSummaryResult.data ?? [];
+  const financialByShipment = new Map(
+    financialRows.map((row) => [row.shipment_id, row]),
+  );
+
+  const marginRows = financialRows.filter(
+    (row) => row.net_margin_pct !== null && row.net_margin_pct !== undefined,
+  );
+  const avgMargin =
+    marginRows.length > 0
+      ? marginRows.reduce((sum, row) => sum + toNumber(row.net_margin_pct), 0) /
+        marginRows.length
+      : 0;
+
+  const lowMarginCount = financialRows.filter(
+    (row) => toNumber(row.net_profit_krw) < 0,
+  ).length;
+
+  const alerts = [
+    ...(agedShipmentsResult.data ?? []).map((row) => {
+      const days = summarizeInTankDays(row.intake_date) ?? 0;
+      return {
+        ko: `${row.shipment_number} 배치가 ${days}일째 보관 중입니다.`,
+        en: `${row.shipment_number} has stayed in tank for ${days} days.`,
+      };
+    }),
+  ];
+
+  const highestOutstanding = supplierBalances[0];
+  if (highestOutstanding && highestOutstanding.outstanding > 10_000_000) {
+    alerts.push({
+      ko: `${highestOutstanding.name_kr} 미지급 잔액이 ${formatKrw(
+        highestOutstanding.outstanding,
+      )} 입니다.`,
+      en: `${highestOutstanding.code} payable reached ${formatKrw(
+        highestOutstanding.outstanding,
+      )}.`,
+    });
+  }
+
+  if (lowMarginCount > 0) {
+    alerts.push({
+      ko: `현재 ${lowMarginCount}개 배치가 손실 상태입니다.`,
+      en: `${lowMarginCount} shipment(s) are currently loss-making.`,
+    });
+  }
+
+  if (alerts.length === 0) {
+    alerts.push({
+      ko: "현재 확인된 운영 경고가 없습니다.",
+      en: "No active operational alerts right now.",
+    });
+  }
+
+  const inventoryByShipment = new Map(
+    (inventorySummaryResult.data ?? []).map((row) => [
+      row.shipment_id,
+      toNumber(row.remaining_qty),
+    ]),
+  );
+
+  const shipmentRows = (recentShipmentsResult.data ?? []).map((row) => {
+    const supplier = Array.isArray(row.suppliers) ? row.suppliers[0] : row.suppliers;
+    const financial = financialByShipment.get(row.id);
+    const marginValue =
+      financial?.net_margin_pct === null || financial?.net_margin_pct === undefined
+        ? null
+        : toNumber(financial.net_margin_pct);
+    const remaining = inventoryByShipment.get(row.id);
+
+    return {
+      shipmentNo: row.shipment_number,
+      supplier: supplier?.name_kr ?? supplier?.code ?? "-",
+      statusKo: statusKoMap[row.status] ?? row.status,
+      statusEn: statusEnMap[row.status] ?? row.status,
+      margin: marginValue === null ? "-" : formatPercent(marginValue),
+      stock:
+        remaining === undefined
+          ? "-"
+          : `${remaining.toLocaleString("ko-KR")} units`,
+    };
+  });
+
+  const metrics = [
+    {
+      titleKo: "활성 수입 배치",
+      titleEn: "Active Shipments",
+      value: `${activeStatusRows.length.toLocaleString("ko-KR")} 건`,
+      hint: `In Tank ${inTankCount}건 · Pending Customs ${pendingCustomsCount}건`,
+    },
+    {
+      titleKo: "현재고(전체)",
+      titleEn: "Live Stock",
+      value: `${totalRemaining.toLocaleString("ko-KR")} units`,
+      hint: "잔량 = 입고 - 출하 - 폐사",
+    },
+    {
+      titleKo: "공급처 미지급",
+      titleEn: "Accounts Payable",
+      value: formatKrw(totalOutstanding),
+      hint:
+        highestOutstanding && highestOutstanding.outstanding > 0
+          ? `${highestOutstanding.name_kr} 최대 ${formatKrw(
+              highestOutstanding.outstanding,
+            )}`
+          : "미지급 잔액 없음",
+    },
+    {
+      titleKo: "평균 순이익률",
+      titleEn: "Average Net Margin",
+      value: formatPercent(avgMargin),
+      hint: `손실 배치 ${lowMarginCount}건`,
+      tone: avgMargin < 0 ? ("warning" as const) : ("default" as const),
+    },
+  ];
+
   return (
     <div className="flex flex-col gap-4 md:gap-6">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -99,16 +235,16 @@ export default function DashboardPage() {
         <SectionCard titleKo="MVP 진행 상태" titleEn="MVP Build Status">
           <div className="space-y-2 text-sm text-text-primary">
             <p className="rounded-xl border border-line bg-canvas px-3 py-3">
-              <span className="font-semibold">완료</span> · 프로젝트 스캐폴딩,
-              Supabase 초기화, 한국어 중심 UI 셸
+              <span className="font-semibold">완료</span> · 로그인 보호, Supabase 연동,
+              실데이터 대시보드 연결
             </p>
             <p className="rounded-xl border border-line bg-canvas px-3 py-3">
-              <span className="font-semibold">진행중</span> · 초기 DB 스키마 및 모듈
-              테이블 구성
+              <span className="font-semibold">진행중</span> · 기준정보 CRUD 및 배치 입력
+              실폼 구현
             </p>
             <p className="rounded-xl border border-line bg-canvas px-3 py-3">
-              <span className="font-semibold">다음 단계</span> · 수입 배치 생성 폼,
-              재고 차감 로직, 미지급 자동 집계
+              <span className="font-semibold">다음 단계</span> · 재고 무결성 차단,
+              출하/폐사 연동, 미지급 자동 분개
             </p>
           </div>
         </SectionCard>
