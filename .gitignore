@@ -1,0 +1,20 @@
+# Root workspace
+.DS_Store
+
+# Local secrets / notes
+githubsupa.txt
+
+# Data source files
+*.xlsx
+project-recqp.txt
+
+# Supabase
+supabase/.temp/
+
+# Web app build artifacts
+web/node_modules/
+web/.next/
+web/out/
+web/.vercel/
+web/.env*
+!web/.env.example

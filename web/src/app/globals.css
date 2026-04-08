@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+:root {
+  --canvas: #f4faf8;
+  --surface: #ffffff;
+  --surface-strong: #e4f2ee;
+  --text-primary: #123534;
+  --text-secondary: #4f6d6a;
+  --line: #c7dfda;
+  --accent: #0d8b80;
+  --accent-strong: #0b6f67;
+  --warning: #b45d19;
+  --shadow-card: 0 18px 38px rgba(9, 52, 49, 0.08);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-warning: var(--warning);
+  --font-sans: var(--font-noto-sans-kr);
+  --font-heading: var(--font-space-grotesk);
+}
+
+body {
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at 12% 16%, #d9f0ea 0%, rgba(217, 240, 234, 0) 48%),
+    radial-gradient(circle at 84% 8%, #cde8f1 0%, rgba(205, 232, 241, 0) 40%),
+    linear-gradient(180deg, #f7fcfa 0%, #edf6f4 100%);
+  font-family: var(--font-noto-sans-kr), "Noto Sans KR", sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+.app-card {
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+
+.title-en {
+  font-family: var(--font-space-grotesk), "Space Grotesk", sans-serif;
+  color: var(--text-secondary);
+}
+
+.badge-soft {
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, #ffffff);
+  background: color-mix(in srgb, var(--accent) 12%, #ffffff);
+  color: var(--accent-strong);
+}
