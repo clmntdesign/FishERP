@@ -34,6 +34,10 @@
 
 - `supplier_balances`
 - `shipment_inventory_summary`
+- `open_receivables`
+- `buyer_receivable_balances`
+- `receivable_aging_summary`
+- `ap_payment_allocation_summary`
 
 ## Business Rules (Phase 1)
 
@@ -45,3 +49,4 @@
 - Shipment has mandatory accountable owner (`assigned_buyer_id`)
 - Shipment financial inputs (line items/costs) are editable only in `pending_customs`
 - AP credits and write-offs reduce supplier outstanding
+- Receivable aging is computed from `expected_payment_date` and unpaid status

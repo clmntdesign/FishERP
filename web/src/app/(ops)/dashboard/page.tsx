@@ -46,6 +46,9 @@ export default async function DashboardPage() {
     recentShipmentsResult,
     financialSummaryResult,
     agedShipmentsResult,
+    receivableBalanceResult,
+    openReceivablesResult,
+    apAllocationSummaryResult,
   ] = await Promise.all([
     supabase.from("shipments").select("status"),
     supabase
@@ -67,6 +70,22 @@ export default async function DashboardPage() {
       .lte("intake_date", agedCutoffIso)
       .order("intake_date", { ascending: true })
       .limit(5),
+    supabase
+      .from("buyer_receivable_balances")
+      .select(
+        "buyer_id, code, name, outstanding_krw, overdue_krw, open_invoice_count, overdue_invoice_count, oldest_overdue_date",
+      ),
+    supabase
+      .from("open_receivables")
+      .select(
+        "sale_id, buyer_code, buyer_name, expected_payment_date, days_overdue, total_krw, is_overdue",
+      )
+      .order("is_overdue", { ascending: false })
+      .order("days_overdue", { ascending: false })
+      .limit(200),
+    supabase
+      .from("ap_payment_allocation_summary")
+      .select("ap_payment_id, unallocated_amount_krw"),
   ]);
 
   const statusRows = shipmentStatusResult.data ?? [];
@@ -93,19 +112,68 @@ export default async function DashboardPage() {
     0,
   );
 
+  const receivableBalances = (receivableBalanceResult.data ?? []).map((row) => ({
+    buyer_id: row.buyer_id,
+    code: row.code,
+    name: row.name,
+    outstanding_krw: toNumber(row.outstanding_krw),
+    overdue_krw: toNumber(row.overdue_krw),
+    open_invoice_count: toNumber(row.open_invoice_count),
+    overdue_invoice_count: toNumber(row.overdue_invoice_count),
+    oldest_overdue_date: row.oldest_overdue_date,
+  }));
+
+  const totalReceivableOutstanding = receivableBalances.reduce(
+    (sum, row) => sum + row.outstanding_krw,
+    0,
+  );
+  const totalReceivableOverdue = receivableBalances.reduce(
+    (sum, row) => sum + row.overdue_krw,
+    0,
+  );
+  const overdueReceivableInvoiceCount = receivableBalances.reduce(
+    (sum, row) => sum + row.overdue_invoice_count,
+    0,
+  );
+  const openReceivableInvoiceCount = receivableBalances.reduce(
+    (sum, row) => sum + row.open_invoice_count,
+    0,
+  );
+
+  const topOverdueBuyer = receivableBalances
+    .slice()
+    .sort((a, b) => b.overdue_krw - a.overdue_krw)[0];
+
+  const openReceivables = (openReceivablesResult.data ?? []).map((row) => ({
+    sale_id: row.sale_id,
+    buyer_code: row.buyer_code,
+    buyer_name: row.buyer_name,
+    expected_payment_date: row.expected_payment_date,
+    days_overdue: toNumber(row.days_overdue),
+    total_krw: toNumber(row.total_krw),
+    is_overdue: Boolean(row.is_overdue),
+  }));
+
+  const oldestOverdueReceivable = openReceivables
+    .filter((row) => row.is_overdue)
+    .sort((a, b) => b.days_overdue - a.days_overdue)[0];
+
+  const apAllocationRows = (apAllocationSummaryResult.data ?? []).map((row) => ({
+    ap_payment_id: row.ap_payment_id,
+    unallocated_amount_krw: toNumber(row.unallocated_amount_krw),
+  }));
+  const totalUnallocatedApPayment = apAllocationRows.reduce(
+    (sum, row) => sum + Math.max(row.unallocated_amount_krw, 0),
+    0,
+  );
+  const unallocatedApPaymentCount = apAllocationRows.filter(
+    (row) => row.unallocated_amount_krw > 0,
+  ).length;
+
   const financialRows = financialSummaryResult.data ?? [];
   const financialByShipment = new Map(
     financialRows.map((row) => [row.shipment_id, row]),
   );
-
-  const marginRows = financialRows.filter(
-    (row) => row.net_margin_pct !== null && row.net_margin_pct !== undefined,
-  );
-  const avgMargin =
-    marginRows.length > 0
-      ? marginRows.reduce((sum, row) => sum + toNumber(row.net_margin_pct), 0) /
-        marginRows.length
-      : 0;
 
   const lowMarginCount = financialRows.filter(
     (row) => toNumber(row.net_profit_krw) < 0,
@@ -137,6 +205,29 @@ export default async function DashboardPage() {
     alerts.push({
       ko: `현재 ${lowMarginCount}개 배치가 손실 상태입니다.`,
       en: `${lowMarginCount} shipment(s) are currently loss-making.`,
+    });
+  }
+
+  if (topOverdueBuyer && topOverdueBuyer.overdue_krw > 0) {
+    alerts.push({
+      ko: `${topOverdueBuyer.name} 연체 미수금이 ${formatKrw(topOverdueBuyer.overdue_krw)} 입니다.`,
+      en: `${topOverdueBuyer.code} overdue receivables reached ${formatKrw(
+        topOverdueBuyer.overdue_krw,
+      )}.`,
+    });
+  }
+
+  if (oldestOverdueReceivable && oldestOverdueReceivable.days_overdue > 0) {
+    alerts.push({
+      ko: `${oldestOverdueReceivable.buyer_name} 미수건이 ${oldestOverdueReceivable.days_overdue}일 지연 중입니다.`,
+      en: `${oldestOverdueReceivable.buyer_code} has a receivable overdue by ${oldestOverdueReceivable.days_overdue} days.`,
+    });
+  }
+
+  if (totalUnallocatedApPayment > 0) {
+    alerts.push({
+      ko: `미배정 지급금 ${formatKrw(totalUnallocatedApPayment)} (${unallocatedApPaymentCount}건) 확인이 필요합니다.`,
+      en: `Unallocated AP payments total ${formatKrw(totalUnallocatedApPayment)} across ${unallocatedApPaymentCount} payment(s).`,
     });
   }
 
@@ -201,17 +292,30 @@ export default async function DashboardPage() {
           : "미지급 잔액 없음",
     },
     {
-      titleKo: "평균 순이익률",
-      titleEn: "Average Net Margin",
-      value: formatPercent(avgMargin),
-      hint: `손실 배치 ${lowMarginCount}건`,
-      tone: avgMargin < 0 ? ("warning" as const) : ("default" as const),
+      titleKo: "매출채권 미수금",
+      titleEn: "Accounts Receivable",
+      value: formatKrw(totalReceivableOutstanding),
+      hint: `열린 미수 ${openReceivableInvoiceCount.toLocaleString("ko-KR")}건`,
+    },
+    {
+      titleKo: "연체 미수금",
+      titleEn: "Overdue Receivables",
+      value: formatKrw(totalReceivableOverdue),
+      hint: `지연 ${overdueReceivableInvoiceCount.toLocaleString("ko-KR")}건`,
+      tone: totalReceivableOverdue > 0 ? ("warning" as const) : ("default" as const),
+    },
+    {
+      titleKo: "미배정 지급",
+      titleEn: "Unallocated AP Payments",
+      value: formatKrw(totalUnallocatedApPayment),
+      hint: `${unallocatedApPaymentCount.toLocaleString("ko-KR")}건 미배정`,
+      tone: totalUnallocatedApPayment > 0 ? ("warning" as const) : ("default" as const),
     },
   ];
 
   return (
     <div className="flex flex-col gap-4 md:gap-6">
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {metrics.map((metric) => (
           <MetricCard key={metric.titleKo} {...metric} />
         ))}
@@ -239,12 +343,12 @@ export default async function DashboardPage() {
               배치/재고/판매/미지급 운영 플로우
             </p>
             <p className="rounded-xl border border-line bg-canvas px-3 py-3">
-              <span className="font-semibold">진행중</span> · 미지급 다중 배정,
-              동시성 대응 재고 무결성 강화
+              <span className="font-semibold">진행중</span> · 매출채권 에이징,
+              거래처별 미수 원장, 리스크 알림 고도화
             </p>
             <p className="rounded-xl border border-line bg-canvas px-3 py-3">
-              <span className="font-semibold">다음 단계</span> · 배치 수정 워크플로,
-              과거 이관 스크립트, 대시보드 리스크 지표 확장
+              <span className="font-semibold">다음 단계</span> · 과거 이관 스크립트,
+              정합성 리포트, 컷오버 운영 점검
             </p>
           </div>
         </SectionCard>

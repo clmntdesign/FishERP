@@ -45,6 +45,7 @@ export default async function PayablesPage() {
     transactionsResult,
     debitResult,
     allocationsResult,
+    paymentAllocationSummaryResult,
   ] = await Promise.all([
     supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
     supabase
@@ -72,6 +73,9 @@ export default async function PayablesPage() {
     supabase
       .from("ap_payment_allocations")
       .select("ap_transaction_id, allocated_amount_krw"),
+    supabase
+      .from("ap_payment_allocation_summary")
+      .select("ap_payment_id, unallocated_amount_krw"),
   ]);
 
   const role = (profileResult.data?.role as AppRole | null) ?? "admin";
@@ -111,9 +115,20 @@ export default async function PayablesPage() {
     })
     .filter((row) => row.remaining_krw > 0) as OpenDebitOption[];
 
+  const unallocatedPaymentRows = (paymentAllocationSummaryResult.data ?? []).map((row) =>
+    toNumber(row.unallocated_amount_krw),
+  );
+  const unallocatedPaymentTotal = unallocatedPaymentRows.reduce(
+    (sum, amount) => sum + Math.max(amount, 0),
+    0,
+  );
+  const unallocatedPaymentCount = unallocatedPaymentRows.filter(
+    (amount) => amount > 0,
+  ).length;
+
   return (
     <div className="flex flex-col gap-4 md:gap-6">
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="app-card p-4">
           <p className="text-xs font-semibold text-text-secondary">총 미지급</p>
           <p className="mt-2 text-2xl font-semibold text-warning">
@@ -124,6 +139,15 @@ export default async function PayablesPage() {
           <p className="text-xs font-semibold text-text-secondary">공급처 수</p>
           <p className="mt-2 text-2xl font-semibold text-accent-strong">
             {balances.length.toLocaleString("ko-KR")}
+          </p>
+        </div>
+        <div className="app-card p-4">
+          <p className="text-xs font-semibold text-text-secondary">미배정 지급금</p>
+          <p className="mt-2 text-2xl font-semibold text-warning">
+            {formatKrw(unallocatedPaymentTotal)}
+          </p>
+          <p className="mt-1 text-xs text-text-secondary">
+            {unallocatedPaymentCount.toLocaleString("ko-KR")}건 미배정
           </p>
         </div>
         <div className="app-card p-4">

@@ -152,3 +152,34 @@ export async function updateSaleStatusAction(formData: FormData) {
   revalidatePath("/sales");
   revalidatePath("/dashboard");
 }
+
+export async function markSalePaidAction(formData: FormData) {
+  const { supabase, role } = await getRoleContext();
+
+  if (!canUpdateSales(role)) {
+    return;
+  }
+
+  const saleId = textValue(formData, "sale_id");
+  const expectedPaymentDate = textValue(formData, "expected_payment_date");
+  const actualPaymentDateRaw = textValue(formData, "actual_payment_date");
+
+  if (!saleId) return;
+
+  const { error } = await supabase
+    .from("sales")
+    .update({
+      status: "paid",
+      expected_payment_date: expectedPaymentDate || null,
+      actual_payment_date: actualPaymentDateRaw || todayIso(),
+    })
+    .eq("id", saleId);
+
+  if (error) {
+    console.error("[FishERP] markSalePaidAction failed", error.message);
+    return;
+  }
+
+  revalidatePath("/sales");
+  revalidatePath("/dashboard");
+}

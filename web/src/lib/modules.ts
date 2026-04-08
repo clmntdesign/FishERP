@@ -32,8 +32,8 @@ export const appModules: ModuleItem[] = [
     href: "/sales",
     ko: "판매",
     en: "Sales",
-    descriptionKo: "출하, 매출, 입금 예정 및 처리 현황",
-    descriptionEn: "Dispatch, revenue, and payment tracking",
+    descriptionKo: "출하, 매출, 미수채권 에이징 및 입금 처리",
+    descriptionEn: "Dispatch, revenue, receivables aging, and payment posting",
   },
   {
     href: "/payables",
