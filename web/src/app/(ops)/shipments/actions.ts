@@ -12,6 +12,11 @@ export type ShipmentFormState = {
   success: string | null;
 };
 
+export type ShipmentStatusFormState = {
+  error: string | null;
+  success: string | null;
+};
+
 type LineItemInput = {
   species_id: string;
   quantity: number;
@@ -361,5 +366,160 @@ export async function createShipmentAction(
   return {
     error: null,
     success: `배치 ${shipmentNumber} 이(가) 등록되었습니다.`,
+  };
+}
+
+export async function updateShipmentStatusAction(
+  _previousState: ShipmentStatusFormState,
+  formData: FormData,
+): Promise<ShipmentStatusFormState> {
+  const { supabase, user, role } = await getCurrentRole();
+
+  if (!canWriteShipments(role)) {
+    return { error: "배치 상태 변경 권한이 없습니다.", success: null };
+  }
+
+  const shipmentId = textValue(formData, "shipment_id");
+  const statusRaw = textValue(formData, "status");
+
+  if (!shipmentId) {
+    return { error: "배치 식별자가 누락되었습니다.", success: null };
+  }
+
+  const nextStatus = allowedStatuses.includes(
+    statusRaw as (typeof allowedStatuses)[number],
+  )
+    ? (statusRaw as (typeof allowedStatuses)[number])
+    : null;
+
+  if (!nextStatus) {
+    return { error: "유효하지 않은 상태 값입니다.", success: null };
+  }
+
+  const { data: shipment, error: shipmentError } = await supabase
+    .from("shipments")
+    .select("id, shipment_number, supplier_id, intake_date, fx_rate, status")
+    .eq("id", shipmentId)
+    .single();
+
+  if (shipmentError || !shipment) {
+    return {
+      error: `배치 조회 실패: ${shipmentError?.message ?? "배치를 찾을 수 없습니다."}`,
+      success: null,
+    };
+  }
+
+  if (shipment.status === nextStatus) {
+    return {
+      error: null,
+      success: `이미 ${nextStatus} 상태입니다.`,
+    };
+  }
+
+  const shouldCreateDebit = nextStatus === "in_tank" && shipment.status !== "in_tank";
+  let shouldInsertDebit = false;
+  let debitAmountKrw = 0;
+
+  if (shouldCreateDebit) {
+    const { data: existingDebit, error: existingDebitError } = await supabase
+      .from("ap_transactions")
+      .select("id")
+      .eq("shipment_id", shipment.id)
+      .eq("type", "debit")
+      .maybeSingle();
+
+    if (existingDebitError) {
+      return {
+        error: `기존 미지급 차변 조회 실패: ${existingDebitError.message}`,
+        success: null,
+      };
+    }
+
+    if (!existingDebit) {
+      if (!shipment.fx_rate || Number(shipment.fx_rate) <= 0) {
+        return {
+          error: "입고 확정(in_tank) 전 환율을 반드시 입력해 주세요.",
+          success: null,
+        };
+      }
+
+      const { data: lineRows, error: lineRowsError } = await supabase
+        .from("shipment_line_items")
+        .select("total_jpy")
+        .eq("shipment_id", shipment.id);
+
+      if (lineRowsError) {
+        return {
+          error: `배치 금액 조회 실패: ${lineRowsError.message}`,
+          success: null,
+        };
+      }
+
+      const totalJpy = (lineRows ?? []).reduce(
+        (sum, row) => sum + Number(row.total_jpy ?? 0),
+        0,
+      );
+
+      if (!Number.isFinite(totalJpy) || totalJpy <= 0) {
+        return {
+          error: "차변 생성 실패: 품종 라인 합계(JPY)가 0입니다.",
+          success: null,
+        };
+      }
+
+      debitAmountKrw = Math.round(totalJpy * Number(shipment.fx_rate));
+
+      if (!Number.isFinite(debitAmountKrw) || debitAmountKrw <= 0) {
+        return {
+          error: "차변 생성 실패: 환율 또는 금액 계산값이 유효하지 않습니다.",
+          success: null,
+        };
+      }
+
+      shouldInsertDebit = true;
+    }
+  }
+
+  const { error: updateError } = await supabase
+    .from("shipments")
+    .update({ status: nextStatus })
+    .eq("id", shipment.id);
+
+  if (updateError) {
+    return {
+      error: `상태 변경 실패: ${updateError.message}`,
+      success: null,
+    };
+  }
+
+  if (shouldInsertDebit) {
+    const { error: debitInsertError } = await supabase.from("ap_transactions").insert({
+      supplier_id: shipment.supplier_id,
+      transaction_date: shipment.intake_date,
+      type: "debit",
+      amount_krw: debitAmountKrw,
+      shipment_id: shipment.id,
+      description: `AUTO: ${shipment.shipment_number} 입고 확정 차변`,
+      created_by: user.id,
+    });
+
+    if (debitInsertError && debitInsertError.code !== "23505") {
+      await supabase.from("shipments").update({ status: shipment.status }).eq("id", shipment.id);
+
+      return {
+        error: `입고 확정 차변 생성 실패: ${debitInsertError.message}`,
+        success: null,
+      };
+    }
+  }
+
+  revalidatePath("/shipments");
+  revalidatePath("/inventory");
+  revalidatePath("/dashboard");
+  revalidatePath("/payables");
+
+  return {
+    error: null,
+    success: `배치 상태가 ${nextStatus}(으)로 변경되었습니다.`,
   };
 }

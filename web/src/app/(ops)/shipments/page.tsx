@@ -3,6 +3,7 @@ import { SectionCard } from "@/components/section-card";
 import { canWriteShipments, type AppRole, requireUser } from "@/lib/auth";
 import { formatKrw, formatPercent } from "@/lib/format";
 import { ShipmentCreateForm } from "@/app/(ops)/shipments/shipment-create-form";
+import { ShipmentStatusForm } from "@/app/(ops)/shipments/shipment-status-form";
 
 type ShipmentsPageProps = {
   searchParams: Promise<{ id?: string | string[] }>;
@@ -60,6 +61,14 @@ function getSupplierRef(value: unknown): SupplierRef | null {
     code: String((value as { code?: unknown }).code ?? ""),
     name_kr: String((value as { name_kr?: unknown }).name_kr ?? ""),
   };
+}
+
+function normalizeShipmentStatus(value: string) {
+  if (value === "pending_customs") return "pending_customs" as const;
+  if (value === "in_tank") return "in_tank" as const;
+  if (value === "partially_sold") return "partially_sold" as const;
+  if (value === "completed") return "completed" as const;
+  return "pending_customs" as const;
 }
 
 export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps) {
@@ -246,6 +255,13 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
                 <p className="mt-1 text-xs text-text-secondary">
                   상태: {statusLabelKo[selectedShipment.status] ?? selectedShipment.status}
                 </p>
+
+                {writable ? (
+                  <ShipmentStatusForm
+                    shipmentId={selectedShipment.id}
+                    currentStatus={normalizeShipmentStatus(selectedShipment.status)}
+                  />
+                ) : null}
               </div>
 
               <div className="grid gap-2 text-xs md:grid-cols-2 md:text-sm">

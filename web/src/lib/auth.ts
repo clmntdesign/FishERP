@@ -14,6 +14,26 @@ export const shipmentWriteRoles: AppRole[] = [
   "operations_manager",
   "procurement_officer",
 ];
+export const inventoryWriteRoles: AppRole[] = [
+  "admin",
+  "operations_manager",
+  "procurement_officer",
+];
+export const salesCreateRoles: AppRole[] = [
+  "admin",
+  "operations_manager",
+  "procurement_officer",
+];
+export const salesUpdateRoles: AppRole[] = [
+  "admin",
+  "operations_manager",
+  "procurement_officer",
+  "accounts",
+];
+export const payablesWriteRoles: AppRole[] = [
+  "admin",
+  "accounts",
+];
 
 export async function requireUser() {
   const supabase = await createServerSupabaseClient();
@@ -45,4 +65,20 @@ export function canWriteMasterData(role: AppRole) {
 
 export function canWriteShipments(role: AppRole) {
   return shipmentWriteRoles.includes(role);
+}
+
+export function canWriteInventory(role: AppRole) {
+  return inventoryWriteRoles.includes(role);
+}
+
+export function canCreateSales(role: AppRole) {
+  return salesCreateRoles.includes(role);
+}
+
+export function canUpdateSales(role: AppRole) {
+  return salesUpdateRoles.includes(role);
+}
+
+export function canWritePayables(role: AppRole) {
+  return payablesWriteRoles.includes(role);
 }
