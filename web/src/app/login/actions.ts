@@ -39,9 +39,21 @@ export async function loginAction(
     };
   }
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  let authError: { message: string } | null = null;
 
-  if (error) {
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    authError = error;
+  } catch (error) {
+    console.error("[FishERP] loginAction signInWithPassword crashed", error);
+    return {
+      error:
+        "로그인 요청 중 서버 연결 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+    };
+  }
+
+  if (authError) {
+    console.error("[FishERP] loginAction auth rejected", authError.message);
     return { error: "로그인에 실패했습니다. 계정 정보를 확인해 주세요." };
   }
 
