@@ -29,7 +29,16 @@ export async function loginAction(
     return { error: "이메일과 비밀번호를 입력해 주세요." };
   }
 
-  const supabase = await createServerSupabaseClient();
+  let supabase;
+  try {
+    supabase = await createServerSupabaseClient();
+  } catch {
+    return {
+      error:
+        "서버 설정이 완료되지 않았습니다. Railway 환경변수(NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY)를 확인해 주세요.",
+    };
+  }
+
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {

@@ -1,10 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { getSupabaseEnv } from "@/lib/supabase/env";
+import { tryGetSupabaseEnv } from "@/lib/supabase/env";
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
-  const { url, anonKey } = getSupabaseEnv();
+  const env = tryGetSupabaseEnv();
+
+  if (!env) {
+    return { response, user: null, authError: "missing_supabase_env" as const };
+  }
+
+  const { url, anonKey } = env;
 
   const supabase = createServerClient(url, anonKey, {
     cookies: {
@@ -21,9 +27,18 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  try {
+    const {
+      data: { user },
+      error,
+    } = await supabase.auth.getUser();
 
-  return { response, user };
+    if (error) {
+      return { response, user: null, authError: error.message };
+    }
+
+    return { response, user, authError: null };
+  } catch {
+    return { response, user: null, authError: "supabase_auth_unreachable" as const };
+  }
 }

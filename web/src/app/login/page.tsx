@@ -1,10 +1,16 @@
 import { LoginForm } from "@/app/login/login-form";
+import { tryGetSupabaseEnv } from "@/lib/supabase/env";
 
 type LoginPageProps = {
   searchParams: Promise<{ next?: string | string[] }>;
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
+  const env = tryGetSupabaseEnv();
+  const setupError = env
+    ? null
+    : "배포 환경변수 누락: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY";
+
   const params = await searchParams;
   const next =
     typeof params.next === "string"
@@ -25,7 +31,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             운영용 애플리케이션입니다.
           </p>
         </div>
-        <LoginForm nextPath={next || "/dashboard"} />
+        <LoginForm nextPath={next || "/dashboard"} setupError={setupError} />
       </div>
     </main>
   );

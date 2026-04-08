@@ -23,8 +23,12 @@ function copyCookies(from: NextResponse, to: NextResponse) {
 }
 
 export async function middleware(request: NextRequest) {
-  const { response, user } = await updateSession(request);
+  const { response, user, authError } = await updateSession(request);
   const { pathname } = request.nextUrl;
+
+  if (authError) {
+    response.headers.set("x-fisherp-auth-warning", String(authError));
+  }
 
   if (!user && isProtectedPath(pathname)) {
     const url = request.nextUrl.clone();

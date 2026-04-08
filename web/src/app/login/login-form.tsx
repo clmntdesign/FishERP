@@ -4,13 +4,14 @@ import { useActionState } from "react";
 import { useFormStatus } from "react-dom";
 import { initialLoginState, loginAction } from "@/app/login/actions";
 
-function SubmitButton() {
+function SubmitButton({ disabled }: { disabled?: boolean }) {
   const { pending } = useFormStatus();
+  const blocked = pending || Boolean(disabled);
 
   return (
     <button
       type="submit"
-      disabled={pending}
+      disabled={blocked}
       className="inline-flex h-11 items-center justify-center rounded-xl bg-accent px-4 text-sm font-semibold text-white transition-colors hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-60"
     >
       {pending ? "로그인 중..." : "로그인"}
@@ -20,9 +21,10 @@ function SubmitButton() {
 
 type LoginFormProps = {
   nextPath: string;
+  setupError: string | null;
 };
 
-export function LoginForm({ nextPath }: LoginFormProps) {
+export function LoginForm({ nextPath, setupError }: LoginFormProps) {
   const [state, formAction] = useActionState(loginAction, initialLoginState);
 
   return (
@@ -73,11 +75,17 @@ export function LoginForm({ nextPath }: LoginFormProps) {
         </p>
       ) : null}
 
+      {setupError ? (
+        <p className="mt-4 rounded-xl border border-warning/30 bg-orange-50 px-3 py-2 text-sm text-warning">
+          {setupError}
+        </p>
+      ) : null}
+
       <div className="mt-5 flex items-center justify-between gap-3">
         <p className="text-xs text-text-secondary">
           계정 생성은 운영 관리자 권한에서 진행합니다.
         </p>
-        <SubmitButton />
+        <SubmitButton disabled={Boolean(setupError)} />
       </div>
     </form>
   );
