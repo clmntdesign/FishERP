@@ -6,8 +6,13 @@ import {
   createBuyerAction,
   createSpeciesAction,
   createSupplierAction,
-  initialMasterDataFormState,
+  type MasterDataFormState,
 } from "@/app/(ops)/master-data/actions";
+
+const initialMasterDataFormState: MasterDataFormState = {
+  error: null,
+  success: null,
+};
 
 function ActionMessage({ error, success }: { error: string | null; success: string | null }) {
   if (error) {

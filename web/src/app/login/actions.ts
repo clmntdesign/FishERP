@@ -7,8 +7,6 @@ export type LoginState = {
   error: string | null;
 };
 
-const initialLoginState: LoginState = { error: null };
-
 function normalizeNextPath(value: string | null) {
   if (!value) return "/dashboard";
   if (value.startsWith("/") && !value.startsWith("//")) {
@@ -59,5 +57,3 @@ export async function loginAction(
 
   redirect(nextPath);
 }
-
-export { initialLoginState };

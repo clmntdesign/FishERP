@@ -12,11 +12,6 @@ export type MasterDataFormState = {
   success: string | null;
 };
 
-export const initialMasterDataFormState: MasterDataFormState = {
-  error: null,
-  success: null,
-};
-
 function textValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
