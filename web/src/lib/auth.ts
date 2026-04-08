@@ -9,6 +9,11 @@ export type AppRole =
   | "viewer";
 
 export const masterDataWriteRoles: AppRole[] = ["admin", "operations_manager"];
+export const shipmentWriteRoles: AppRole[] = [
+  "admin",
+  "operations_manager",
+  "procurement_officer",
+];
 
 export async function requireUser() {
   const supabase = await createServerSupabaseClient();
@@ -36,4 +41,8 @@ export async function getCurrentRole() {
 
 export function canWriteMasterData(role: AppRole) {
   return masterDataWriteRoles.includes(role);
+}
+
+export function canWriteShipments(role: AppRole) {
+  return shipmentWriteRoles.includes(role);
 }
