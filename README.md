@@ -6,6 +6,7 @@
 - `supabase/` - Database migrations and seed data
 - `docs/` - Build notes and MVP specifications
 - `scripts/` - One-off tools (historical migration scaffolding)
+- `migration-artifacts/` - Generated SQL/report artifacts from migration scripts (local)
 
 ## Quick Start
 

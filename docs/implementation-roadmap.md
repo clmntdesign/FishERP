@@ -91,7 +91,11 @@ Done when:
 ## Wave 6 - Historical Migration and Cutover
 
 - Migration scripts for both Excel files
+- Row-level staging tables (raw rows, parsed entities, quarantine)
 - Data quality flags for known anomalies (missing amount, FX corruption, negative stock)
+- Reconciliation report gate before promotion
+- Promotion pipeline (pilot subset -> full import)
+- Post-promotion receivable-adjustment application for bad debt rows
 - Reconciliation reports against source totals
 - Cutover checklist to stop new Excel entries
 

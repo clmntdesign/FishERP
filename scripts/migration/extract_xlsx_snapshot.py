@@ -6,6 +6,7 @@ import argparse
 import csv
 import json
 import re
+import unicodedata
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,7 +56,8 @@ def parse_cell_ref(ref: str) -> tuple[int, int]:
 
 
 def normalize_sheet_name(name: str) -> str:
-    safe = re.sub(r"[^0-9A-Za-z가-힣_-]+", "_", name.strip())
+    normalized = unicodedata.normalize("NFC", name).strip()
+    safe = re.sub(r"[^0-9A-Za-z가-힣_-]+", "_", normalized)
     safe = re.sub(r"_+", "_", safe).strip("_")
     return safe or "sheet"
 

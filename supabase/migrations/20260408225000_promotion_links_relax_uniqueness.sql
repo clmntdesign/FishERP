@@ -1,0 +1,5 @@
+alter table public.historical_promotion_links
+drop constraint if exists historical_promotion_links_target_table_source_key_key;
+
+create index if not exists idx_historical_promotion_links_target_source
+on public.historical_promotion_links (target_table, source_key);

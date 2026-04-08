@@ -14,6 +14,7 @@ supabase/.temp/
 
 # Migration script outputs
 migration-output/
+migration-artifacts/
 
 # Python cache
 __pycache__/

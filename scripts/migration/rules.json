@@ -1,0 +1,72 @@
+{
+  "supplier_aliases": {
+    "DAIKEI": "DAIKEI",
+    "다이케이": "DAIKEI",
+    "DAIYUU": "DAIYUU",
+    "다이유": "DAIYUU",
+    "HONGJU": "HONGJU",
+    "홍주": "HONGJU",
+    "MIZUMOTO": "MIZUMOTO",
+    "미즈모토": "MIZUMOTO"
+  },
+  "species_aliases": {
+    "먹장어": "HAGFISH",
+    "무라사키": "MURASAKI",
+    "자바리": "KELP_GROUPER"
+  },
+  "buyer_aliases": {
+    "JYS": "JYS",
+    "jys": "JYS",
+    "기장수산": "GIJANG",
+    "깔구리": "KKALGURI",
+    "깔구리수산": "KKALGURI",
+    "깔꾸리": "KKALGURI",
+    "깔꾸리수산식당": "KKALGURI",
+    "동암": "DONGAM",
+    "소매": "RETAIL",
+    "신라": "SILLA",
+    "에스엠": "SM",
+    "일진": "ILJIN",
+    "일진(강용대)": "ILJIN",
+    "판매대손": "BAD_DEBT",
+    "수금대손": "BAD_DEBT",
+    "해금": "HAEGEUM",
+    "해금수산": "HAEGEUM"
+  },
+  "sales_bad_debt_keywords": [
+    "판매대손",
+    "수금대손"
+  ],
+  "sales_ignore_keywords": [
+    "출하",
+    "품명",
+    "판매처",
+    "판매단가",
+    "판매금액",
+    "입금일",
+    "공제후 판매이익",
+    "유통이력완료"
+  ],
+  "ap_summary_keywords": [
+    "월계",
+    "누계"
+  ],
+  "manual_ignore_source_keys": [
+    "import|3.4|r21",
+    "import|4.15다이유|r20",
+    "import|4.15다이유|r21",
+    "import|4.24|r20",
+    "import|6.12|r24",
+    "import|6.12|r25",
+    "import|6.17|r32",
+    "import|6.17|r34",
+    "import|6.19|r22",
+    "import|6.19|r23",
+    "import|6.19|r24",
+    "import|6.19|r25",
+    "import|6.19|r26",
+    "import|7.1|r32",
+    "import|7.1|r33",
+    "import|8.12|r25"
+  ]
+}
