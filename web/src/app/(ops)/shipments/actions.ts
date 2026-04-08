@@ -17,6 +17,16 @@ export type ShipmentStatusFormState = {
   success: string | null;
 };
 
+export type ShipmentHeaderFormState = {
+  error: string | null;
+  success: string | null;
+};
+
+export type ShipmentFinancialFormState = {
+  error: string | null;
+  success: string | null;
+};
+
 type LineItemInput = {
   species_id: string;
   quantity: number;
@@ -229,6 +239,7 @@ export async function createShipmentAction(
   }
 
   const supplierId = textValue(formData, "supplier_id");
+  const assignedBuyerId = textValue(formData, "assigned_buyer_id") || user.id;
   const intakeDate = parseDateValue(textValue(formData, "intake_date"));
   const customsDate = parseDateValue(textValue(formData, "customs_date"));
   const customsPermitNumber = textValue(formData, "customs_permit_number");
@@ -238,9 +249,9 @@ export async function createShipmentAction(
   const lineItemsRaw = textValue(formData, "line_items_json");
   const ancillaryCostsRaw = textValue(formData, "ancillary_costs_json");
 
-  if (!supplierId || !intakeDate) {
+  if (!supplierId || !assignedBuyerId || !intakeDate) {
     return {
-      error: "공급처와 입고일은 필수입니다.",
+      error: "공급처, 구매담당, 입고일은 필수입니다.",
       success: null,
     };
   }
@@ -285,6 +296,7 @@ export async function createShipmentAction(
         .insert({
           shipment_number: shipmentNumber,
           supplier_id: supplierId,
+          assigned_buyer_id: assignedBuyerId,
           intake_date: intakeDate,
           customs_date: customsDate,
           customs_permit_number: customsPermitNumber || null,
@@ -366,6 +378,154 @@ export async function createShipmentAction(
   return {
     error: null,
     success: `배치 ${shipmentNumber} 이(가) 등록되었습니다.`,
+  };
+}
+
+export async function updateShipmentHeaderAction(
+  _previousState: ShipmentHeaderFormState,
+  formData: FormData,
+): Promise<ShipmentHeaderFormState> {
+  const { supabase, role } = await getCurrentRole();
+
+  if (!canWriteShipments(role)) {
+    return { error: "배치 수정 권한이 없습니다.", success: null };
+  }
+
+  const shipmentId = textValue(formData, "shipment_id");
+  const assignedBuyerId = textValue(formData, "assigned_buyer_id");
+  const customsDate = parseDateValue(textValue(formData, "customs_date"));
+  const customsPermitNumber = textValue(formData, "customs_permit_number");
+  const fxRateRaw = textValue(formData, "fx_rate");
+  const notes = textValue(formData, "notes");
+
+  if (!shipmentId || !assignedBuyerId) {
+    return {
+      error: "배치 식별자와 구매담당은 필수입니다.",
+      success: null,
+    };
+  }
+
+  const { data: shipment, error: shipmentError } = await supabase
+    .from("shipments")
+    .select("id, status, fx_rate")
+    .eq("id", shipmentId)
+    .maybeSingle();
+
+  if (shipmentError || !shipment) {
+    return {
+      error: `배치 조회 실패: ${shipmentError?.message ?? "배치를 찾을 수 없습니다."}`,
+      success: null,
+    };
+  }
+
+  const fxRate = fxRateRaw ? Number(fxRateRaw) : null;
+  if (fxRateRaw && (!Number.isFinite(fxRate) || fxRate === null || fxRate <= 0)) {
+    return {
+      error: "환율은 0보다 큰 숫자로 입력해 주세요.",
+      success: null,
+    };
+  }
+
+  const currentFxRate = shipment.fx_rate === null ? null : Number(shipment.fx_rate);
+  const fxRateChanged =
+    (currentFxRate === null && fxRate !== null) ||
+    (currentFxRate !== null && fxRate === null) ||
+    (currentFxRate !== null && fxRate !== null && currentFxRate !== fxRate);
+
+  if (shipment.status !== "pending_customs" && fxRateChanged) {
+    return {
+      error: "보관중(in_tank) 이후에는 환율을 수정할 수 없습니다.",
+      success: null,
+    };
+  }
+
+  const { error: updateError } = await supabase
+    .from("shipments")
+    .update({
+      assigned_buyer_id: assignedBuyerId,
+      customs_date: customsDate,
+      customs_permit_number: customsPermitNumber || null,
+      fx_rate: fxRate,
+      notes: notes || null,
+    })
+    .eq("id", shipment.id);
+
+  if (updateError) {
+    return {
+      error: `배치 수정 실패: ${updateError.message}`,
+      success: null,
+    };
+  }
+
+  revalidatePath("/shipments");
+  revalidatePath("/dashboard");
+
+  return {
+    error: null,
+    success: "배치 기본 정보가 수정되었습니다.",
+  };
+}
+
+export async function updateShipmentFinancialInputsAction(
+  _previousState: ShipmentFinancialFormState,
+  formData: FormData,
+): Promise<ShipmentFinancialFormState> {
+  const { supabase, role } = await getCurrentRole();
+
+  if (!canWriteShipments(role)) {
+    return { error: "배치 수정 권한이 없습니다.", success: null };
+  }
+
+  const shipmentId = textValue(formData, "shipment_id");
+  const lineItemsRaw = textValue(formData, "line_items_json");
+  const ancillaryCostsRaw = textValue(formData, "ancillary_costs_json");
+
+  if (!shipmentId) {
+    return {
+      error: "배치 식별자가 누락되었습니다.",
+      success: null,
+    };
+  }
+
+  let lineItems: LineItemInput[];
+  let ancillaryCosts: AncillaryCostInput[];
+
+  try {
+    lineItems = parseLineItems(lineItemsRaw);
+    ancillaryCosts = parseAncillaryCosts(ancillaryCostsRaw);
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "입력 데이터 확인 중 오류가 발생했습니다.",
+      success: null,
+    };
+  }
+
+  const { data, error } = await supabase.rpc("replace_shipment_financial_inputs", {
+    p_shipment_id: shipmentId,
+    p_line_items: lineItems,
+    p_ancillary_costs: ancillaryCosts,
+  });
+
+  if (error) {
+    return {
+      error: `배치 라인/부대비용 수정 실패: ${error.message}`,
+      success: null,
+    };
+  }
+
+  const resultRow = Array.isArray(data) ? data[0] : data;
+  const lineCount = Number(resultRow?.line_count ?? lineItems.length);
+  const costCount = Number(resultRow?.cost_count ?? ancillaryCosts.length);
+
+  revalidatePath("/shipments");
+  revalidatePath("/dashboard");
+
+  return {
+    error: null,
+    success: `배치 라인 ${lineCount.toLocaleString("ko-KR")}건, 부대비용 ${costCount.toLocaleString("ko-KR")}건으로 갱신되었습니다.`,
   };
 }
 

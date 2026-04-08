@@ -3,6 +3,8 @@ import { SectionCard } from "@/components/section-card";
 import { canWriteShipments, type AppRole, requireUser } from "@/lib/auth";
 import { formatKrw, formatPercent } from "@/lib/format";
 import { ShipmentCreateForm } from "@/app/(ops)/shipments/shipment-create-form";
+import { ShipmentEditForm } from "@/app/(ops)/shipments/shipment-edit-form";
+import { ShipmentFinancialEditForm } from "@/app/(ops)/shipments/shipment-financial-edit-form";
 import { ShipmentStatusForm } from "@/app/(ops)/shipments/shipment-status-form";
 
 type ShipmentsPageProps = {
@@ -71,6 +73,13 @@ function normalizeShipmentStatus(value: string) {
   return "pending_customs" as const;
 }
 
+function toStatusForEdit(value: string) {
+  if (value === "pending_customs") return "pending_customs" as const;
+  if (value === "in_tank") return "in_tank" as const;
+  if (value === "partially_sold") return "partially_sold" as const;
+  return "completed" as const;
+}
+
 export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps) {
   const { supabase, user } = await requireUser();
   const params = await searchParams;
@@ -81,7 +90,14 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
         ? params.id[0]
         : null;
 
-  const [profileResult, suppliersResult, speciesResult, shipmentsResult, financialResult] =
+  const [
+    profileResult,
+    suppliersResult,
+    speciesResult,
+    assigneesResult,
+    shipmentsResult,
+    financialResult,
+  ] =
     await Promise.all([
       supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
       supabase
@@ -95,9 +111,13 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
         .eq("is_active", true)
         .order("code", { ascending: true }),
       supabase
+        .from("profiles")
+        .select("id, full_name")
+        .order("full_name", { ascending: true }),
+      supabase
         .from("shipments")
         .select(
-          "id, shipment_number, supplier_id, intake_date, customs_date, customs_permit_number, fx_rate, status, notes, suppliers(code, name_kr)",
+          "id, shipment_number, supplier_id, assigned_buyer_id, intake_date, customs_date, customs_permit_number, fx_rate, status, notes, suppliers(code, name_kr)",
         )
         .order("intake_date", { ascending: false })
         .limit(40),
@@ -111,9 +131,13 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
 
   const suppliers = suppliersResult.data ?? [];
   const species = speciesResult.data ?? [];
+  const assignees = assigneesResult.data ?? [];
   const shipments = shipmentsResult.data ?? [];
   const financialMap = new Map(
     (financialResult.data ?? []).map((row) => [row.shipment_id, row]),
+  );
+  const assigneeMap = new Map(
+    assignees.map((row) => [row.id, row.full_name?.trim() || "이름 없음"]),
   );
 
   const activeCount = shipments.filter((row) => row.status !== "completed").length;
@@ -131,7 +155,7 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
         supabase
           .from("shipment_line_items")
           .select(
-            "id, quantity, unit_price_jpy, total_jpy, grade_code, species(code, name_kr)",
+            "id, species_id, quantity, unit_price_jpy, total_jpy, grade_code, species(code, name_kr)",
           )
           .eq("shipment_id", selectedShipment.id)
           .order("created_at", { ascending: true }),
@@ -187,6 +211,11 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
             code: row.code,
             name_kr: row.name_kr,
           }))}
+          assignees={assignees.map((row) => ({
+            id: row.id,
+            full_name: row.full_name?.trim() || "이름 없음",
+          }))}
+          defaultAssigneeId={user.id}
         />
       ) : (
         <SectionCard titleKo="권한 안내" titleEn="Permission Notice">
@@ -205,6 +234,7 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
                 <tr className="text-left text-text-secondary">
                   <th className="px-2 py-2">배치번호</th>
                   <th className="px-2 py-2">공급처</th>
+                  <th className="px-2 py-2">구매담당</th>
                   <th className="px-2 py-2">입고일</th>
                   <th className="px-2 py-2">상태</th>
                   <th className="px-2 py-2">총원가</th>
@@ -229,6 +259,9 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
                         </Link>
                       </td>
                       <td className="px-2 py-2">{supplier?.name_kr ?? "-"}</td>
+                      <td className="px-2 py-2">
+                        {assigneeMap.get(row.assigned_buyer_id ?? "") ?? "-"}
+                      </td>
                       <td className="px-2 py-2">{formatDate(row.intake_date)}</td>
                       <td className="px-2 py-2">{statusLabelKo[row.status] ?? row.status}</td>
                       <td className="px-2 py-2">
@@ -257,10 +290,50 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
                 </p>
 
                 {writable ? (
-                  <ShipmentStatusForm
-                    shipmentId={selectedShipment.id}
-                    currentStatus={normalizeShipmentStatus(selectedShipment.status)}
-                  />
+                  <>
+                    <ShipmentStatusForm
+                      shipmentId={selectedShipment.id}
+                      currentStatus={normalizeShipmentStatus(selectedShipment.status)}
+                    />
+                    <ShipmentEditForm
+                      shipmentId={selectedShipment.id}
+                      status={toStatusForEdit(selectedShipment.status)}
+                      assignedBuyerId={selectedShipment.assigned_buyer_id}
+                      customsDate={selectedShipment.customs_date}
+                      customsPermitNumber={selectedShipment.customs_permit_number}
+                      fxRate={
+                        selectedShipment.fx_rate === null
+                          ? null
+                          : Number(selectedShipment.fx_rate)
+                      }
+                      notes={selectedShipment.notes}
+                      assignees={assignees.map((row) => ({
+                        id: row.id,
+                        full_name: row.full_name?.trim() || "이름 없음",
+                      }))}
+                    />
+                    <ShipmentFinancialEditForm
+                      shipmentId={selectedShipment.id}
+                      status={toStatusForEdit(selectedShipment.status)}
+                      speciesOptions={species.map((row) => ({
+                        id: row.id,
+                        code: row.code,
+                        name_kr: row.name_kr,
+                      }))}
+                      initialLineItems={lineItems.map((line) => ({
+                        species_id: line.species_id,
+                        quantity: toNumber(line.quantity),
+                        unit_price_jpy: toNumber(line.unit_price_jpy),
+                        grade_code: line.grade_code ?? null,
+                      }))}
+                      initialCosts={costs.map((cost) => ({
+                        cost_type: cost.cost_type,
+                        amount_krw: toNumber(cost.amount_krw),
+                        cost_date: cost.cost_date,
+                        notes: cost.notes ?? null,
+                      }))}
+                    />
+                  </>
                 ) : null}
               </div>
 
@@ -273,6 +346,9 @@ export default async function ShipmentsPage({ searchParams }: ShipmentsPageProps
                 </p>
                 <p className="rounded-lg border border-line bg-canvas px-3 py-2">
                   통관번호: {selectedShipment.customs_permit_number ?? "-"}
+                </p>
+                <p className="rounded-lg border border-line bg-canvas px-3 py-2">
+                  구매담당: {assigneeMap.get(selectedShipment.assigned_buyer_id ?? "") ?? "-"}
                 </p>
                 <p className="rounded-lg border border-line bg-canvas px-3 py-2">
                   환율: {selectedShipment.fx_rate ? selectedShipment.fx_rate : "-"}

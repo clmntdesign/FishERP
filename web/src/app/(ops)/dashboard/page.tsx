@@ -235,16 +235,16 @@ export default async function DashboardPage() {
         <SectionCard titleKo="MVP 진행 상태" titleEn="MVP Build Status">
           <div className="space-y-2 text-sm text-text-primary">
             <p className="rounded-xl border border-line bg-canvas px-3 py-3">
-              <span className="font-semibold">완료</span> · 로그인 보호, Supabase 연동,
-              실데이터 대시보드 연결
+              <span className="font-semibold">완료</span> · 로그인 보호, 기준정보,
+              배치/재고/판매/미지급 운영 플로우
             </p>
             <p className="rounded-xl border border-line bg-canvas px-3 py-3">
-              <span className="font-semibold">진행중</span> · 기준정보 CRUD 및 배치 입력
-              실폼 구현
+              <span className="font-semibold">진행중</span> · 미지급 다중 배정,
+              동시성 대응 재고 무결성 강화
             </p>
             <p className="rounded-xl border border-line bg-canvas px-3 py-3">
-              <span className="font-semibold">다음 단계</span> · 재고 무결성 차단,
-              출하/폐사 연동, 미지급 자동 분개
+              <span className="font-semibold">다음 단계</span> · 배치 수정 워크플로,
+              과거 이관 스크립트, 대시보드 리스크 지표 확장
             </p>
           </div>
         </SectionCard>

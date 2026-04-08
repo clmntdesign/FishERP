@@ -19,6 +19,11 @@ type SpeciesOption = {
   name_kr: string;
 };
 
+type AssigneeOption = {
+  id: string;
+  full_name: string;
+};
+
 type LineItemInput = {
   species_id: string;
   quantity: string;
@@ -36,6 +41,8 @@ type CostInput = {
 type ShipmentCreateFormProps = {
   suppliers: SupplierOption[];
   species: SpeciesOption[];
+  assignees: AssigneeOption[];
+  defaultAssigneeId: string;
 };
 
 const initialState: ShipmentFormState = {
@@ -74,7 +81,12 @@ function SubmitButton({ disabled }: { disabled: boolean }) {
   );
 }
 
-export function ShipmentCreateForm({ suppliers, species }: ShipmentCreateFormProps) {
+export function ShipmentCreateForm({
+  suppliers,
+  species,
+  assignees,
+  defaultAssigneeId,
+}: ShipmentCreateFormProps) {
   const [state, formAction] = useActionState(createShipmentAction, initialState);
 
   const [lineItems, setLineItems] = useState<LineItemInput[]>([
@@ -89,7 +101,8 @@ export function ShipmentCreateForm({ suppliers, species }: ShipmentCreateFormPro
   const [costItems, setCostItems] = useState<CostInput[]>([
   ]);
 
-  const disabled = suppliers.length === 0 || species.length === 0;
+  const disabled =
+    suppliers.length === 0 || species.length === 0 || assignees.length === 0;
 
   const lineItemsJson = useMemo(() => JSON.stringify(lineItems), [lineItems]);
   const costsJson = useMemo(() => JSON.stringify(costItems), [costItems]);
@@ -116,6 +129,22 @@ export function ShipmentCreateForm({ suppliers, species }: ShipmentCreateFormPro
             {suppliers.map((supplier) => (
               <option key={supplier.id} value={supplier.id}>
                 {supplier.name_kr} ({supplier.code})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-text-secondary">구매담당</span>
+          <select
+            name="assigned_buyer_id"
+            required
+            defaultValue={defaultAssigneeId || assignees[0]?.id || ""}
+            className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
+          >
+            {assignees.map((assignee) => (
+              <option key={assignee.id} value={assignee.id}>
+                {assignee.full_name || "이름 없음"}
               </option>
             ))}
           </select>
@@ -451,7 +480,7 @@ export function ShipmentCreateForm({ suppliers, species }: ShipmentCreateFormPro
 
       {disabled ? (
         <p className="mt-4 text-sm text-warning">
-          배치 등록을 위해 기준정보(공급처/품종)를 먼저 생성해 주세요.
+          배치 등록을 위해 기준정보(공급처/품종)와 구매담당 사용자를 확인해 주세요.
         </p>
       ) : null}
 

@@ -7,7 +7,6 @@ import {
   type AppRole,
   requireUser,
 } from "@/lib/auth";
-import { getShipmentSpeciesStock } from "@/lib/server/stock";
 
 export type SaleCreateFormState = {
   error: string | null;
@@ -78,56 +77,15 @@ export async function createSaleAction(
     };
   }
 
-  const { count, error: lineError } = await supabase
-    .from("shipment_line_items")
-    .select("id", { count: "exact", head: true })
-    .eq("shipment_id", shipmentId)
-    .eq("species_id", speciesId);
-
-  if (lineError) {
-    return {
-      error: `배치 품종 확인 실패: ${lineError.message}`,
-      success: null,
-    };
-  }
-
-  if (!count || count <= 0) {
-    return {
-      error: "선택한 배치에는 해당 품종 입고 기록이 없습니다.",
-      success: null,
-    };
-  }
-
-  let stock;
-  try {
-    stock = await getShipmentSpeciesStock(supabase, shipmentId, speciesId);
-  } catch (error) {
-    return {
-      error:
-        error instanceof Error
-          ? error.message
-          : "재고 검증 중 오류가 발생했습니다.",
-      success: null,
-    };
-  }
-
-  if (quantity > stock.remainingQty) {
-    return {
-      error: `재고 부족: 현재 잔량 ${stock.remainingQty.toLocaleString("ko-KR")} 보다 큰 수량은 판매할 수 없습니다.`,
-      success: null,
-    };
-  }
-
-  const { error } = await supabase.from("sales").insert({
-    shipment_id: shipmentId,
-    species_id: speciesId,
-    buyer_id: buyerId,
-    dispatch_date: dispatchDate,
-    quantity,
-    unit_price_krw: Math.round(unitPriceKrw),
-    expected_payment_date: expectedPaymentDate || null,
-    status: "dispatched",
-    notes: notes || null,
+  const { data, error } = await supabase.rpc("create_sale_with_stock_guard", {
+    p_shipment_id: shipmentId,
+    p_species_id: speciesId,
+    p_buyer_id: buyerId,
+    p_dispatch_date: dispatchDate,
+    p_quantity: quantity,
+    p_unit_price_krw: Math.round(unitPriceKrw),
+    p_expected_payment_date: expectedPaymentDate || null,
+    p_notes: notes || null,
   });
 
   if (error) {
@@ -137,15 +95,18 @@ export async function createSaleAction(
     };
   }
 
+  const resultRow = Array.isArray(data) ? data[0] : data;
+  const remainingQtyRaw = Number(resultRow?.remaining_qty ?? 0);
+  const remainingQty = Number.isFinite(remainingQtyRaw) ? remainingQtyRaw : 0;
+
   revalidatePath("/sales");
   revalidatePath("/inventory");
   revalidatePath("/shipments");
   revalidatePath("/dashboard");
 
-  const nextRemaining = stock.remainingQty - quantity;
   return {
     error: null,
-    success: `판매 등록 완료 (잔량 ${nextRemaining.toLocaleString("ko-KR")}).`,
+    success: `판매 등록 완료 (잔량 ${remainingQty.toLocaleString("ko-KR")}).`,
   };
 }
 

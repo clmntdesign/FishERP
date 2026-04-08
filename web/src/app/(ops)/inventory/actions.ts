@@ -6,7 +6,6 @@ import {
   type AppRole,
   requireUser,
 } from "@/lib/auth";
-import { getShipmentSpeciesStock } from "@/lib/server/stock";
 
 export type MortalityFormState = {
   error: string | null;
@@ -44,7 +43,7 @@ export async function recordMortalityAction(
   _previousState: MortalityFormState,
   formData: FormData,
 ): Promise<MortalityFormState> {
-  const { supabase, user, role } = await getRoleContext();
+  const { supabase, role } = await getRoleContext();
 
   if (!canWriteInventory(role)) {
     return { error: "폐사 기록 등록 권한이 없습니다.", success: null };
@@ -70,41 +69,13 @@ export async function recordMortalityAction(
     ? (causeRaw as (typeof allowedCauses)[number])
     : "unknown";
 
-  let stock;
-  try {
-    stock = await getShipmentSpeciesStock(supabase, shipmentId, speciesId);
-  } catch (error) {
-    return {
-      error:
-        error instanceof Error
-          ? error.message
-          : "재고 조회 중 오류가 발생했습니다.",
-      success: null,
-    };
-  }
-
-  if (stock.intakeQty <= 0) {
-    return {
-      error: "선택한 배치에 해당 품종 입고 라인이 없습니다.",
-      success: null,
-    };
-  }
-
-  if (quantity > stock.remainingQty) {
-    return {
-      error: `재고 부족: 현재 잔량 ${stock.remainingQty.toLocaleString("ko-KR")} 보다 큰 수량은 기록할 수 없습니다.`,
-      success: null,
-    };
-  }
-
-  const { error } = await supabase.from("mortality_records").insert({
-    shipment_id: shipmentId,
-    species_id: speciesId,
-    recorded_date: recordedDate,
-    quantity,
-    cause,
-    notes: notes || null,
-    recorded_by: user.id,
+  const { data, error } = await supabase.rpc("record_mortality_with_stock_guard", {
+    p_shipment_id: shipmentId,
+    p_species_id: speciesId,
+    p_recorded_date: recordedDate,
+    p_quantity: quantity,
+    p_cause: cause,
+    p_notes: notes || null,
   });
 
   if (error) {
@@ -114,14 +85,16 @@ export async function recordMortalityAction(
     };
   }
 
+  const resultRow = Array.isArray(data) ? data[0] : data;
+  const remainingQtyRaw = Number(resultRow?.remaining_qty ?? 0);
+  const remainingQty = Number.isFinite(remainingQtyRaw) ? remainingQtyRaw : 0;
+
   revalidatePath("/inventory");
   revalidatePath("/shipments");
   revalidatePath("/dashboard");
 
-  const nextRemaining = stock.remainingQty - quantity;
-
   return {
     error: null,
-    success: `폐사 ${quantity.toLocaleString("ko-KR")} 기록 완료 (잔량 ${nextRemaining.toLocaleString("ko-KR")}).`,
+    success: `폐사 ${quantity.toLocaleString("ko-KR")} 기록 완료 (잔량 ${remainingQty.toLocaleString("ko-KR")}).`,
   };
 }

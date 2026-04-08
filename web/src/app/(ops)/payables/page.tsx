@@ -105,6 +105,7 @@ export default async function PayablesPage() {
         shipment_number: shipment?.shipment_number ?? null,
         transaction_date: row.transaction_date,
         amount_krw: amount,
+        allocated_krw: allocated,
         remaining_krw: remaining,
       };
     })

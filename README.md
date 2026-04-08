@@ -5,6 +5,7 @@
 - `web/` - Next.js application
 - `supabase/` - Database migrations and seed data
 - `docs/` - Build notes and MVP specifications
+- `scripts/` - One-off tools (historical migration scaffolding)
 
 ## Quick Start
 

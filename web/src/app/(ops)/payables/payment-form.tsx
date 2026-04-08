@@ -19,6 +19,7 @@ export type OpenDebitOption = {
   shipment_number: string | null;
   transaction_date: string;
   amount_krw: number;
+  allocated_krw: number;
   remaining_krw: number;
 };
 
@@ -54,23 +55,56 @@ export function PaymentForm({ suppliers, openDebits }: PaymentFormProps) {
   const [state, formAction] = useActionState(createSupplierPaymentAction, initialState);
 
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
+  const [totalAmountRaw, setTotalAmountRaw] = useState("");
+  const [allocationInputs, setAllocationInputs] = useState<Record<string, string>>({});
 
   const supplierDebits = useMemo(
     () => openDebits.filter((row) => row.supplier_id === supplierId),
     [openDebits, supplierId],
   );
 
-  const [targetDebitId, setTargetDebitId] = useState("");
+  const totalAmount = useMemo(() => {
+    const parsed = Number(totalAmountRaw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return Math.round(parsed);
+  }, [totalAmountRaw]);
 
-  const selectedTarget = targetDebitId
-    ? supplierDebits.find((row) => row.id === targetDebitId) ?? null
-    : null;
+  const allocationRows = useMemo(
+    () =>
+      supplierDebits
+        .map((debit) => {
+          const parsed = Number(allocationInputs[debit.id] ?? "");
+          if (!Number.isFinite(parsed) || parsed <= 0) return null;
+          return {
+            ap_transaction_id: debit.id,
+            allocated_amount_krw: Math.round(parsed),
+          };
+        })
+        .filter((row): row is { ap_transaction_id: string; allocated_amount_krw: number } =>
+          Boolean(row),
+        ),
+    [allocationInputs, supplierDebits],
+  );
 
-  const disabled = suppliers.length === 0;
+  const allocatedTotal = useMemo(
+    () => allocationRows.reduce((sum, row) => sum + row.allocated_amount_krw, 0),
+    [allocationRows],
+  );
+
+  const unallocatedAmount = totalAmount - allocatedTotal;
+  const overAllocated = totalAmount > 0 && allocatedTotal > totalAmount;
+
+  const allocationsJson = useMemo(
+    () => JSON.stringify(allocationRows),
+    [allocationRows],
+  );
+
+  const disabled = suppliers.length === 0 || overAllocated;
 
   return (
     <form action={formAction} className="rounded-xl border border-line bg-canvas p-3">
       <h3 className="text-sm font-semibold text-text-primary">지급 등록</h3>
+      <input type="hidden" name="allocations_json" value={allocationsJson} />
 
       <div className="mt-3 grid gap-2 md:grid-cols-2">
         <label className="block">
@@ -81,7 +115,7 @@ export function PaymentForm({ suppliers, openDebits }: PaymentFormProps) {
             onChange={(event) => {
               const nextSupplier = event.target.value;
               setSupplierId(nextSupplier);
-              setTargetDebitId("");
+              setAllocationInputs({});
             }}
             className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
           >
@@ -113,6 +147,8 @@ export function PaymentForm({ suppliers, openDebits }: PaymentFormProps) {
             step="1"
             required
             placeholder="예: 2500000"
+            value={totalAmountRaw}
+            onChange={(event) => setTotalAmountRaw(event.target.value)}
             className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
           />
         </label>
@@ -126,35 +162,80 @@ export function PaymentForm({ suppliers, openDebits }: PaymentFormProps) {
           />
         </label>
 
-        <label className="block md:col-span-2">
-          <span className="mb-1 block text-xs font-semibold text-text-secondary">배정 대상 차변 (선택)</span>
-          <select
-            name="target_debit_transaction_id"
-            value={targetDebitId}
-            onChange={(event) => setTargetDebitId(event.target.value)}
-            className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
-          >
-            <option value="">배정하지 않음</option>
-            {supplierDebits.map((debit) => (
-              <option key={debit.id} value={debit.id}>
-                {debit.transaction_date} · {debit.shipment_number ?? "직접거래"} · 잔액{" "}
-                {debit.remaining_krw.toLocaleString("ko-KR")}
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="rounded-lg border border-line bg-white p-2 md:col-span-2">
+          <p className="text-xs font-semibold text-text-secondary">차변 다중 배정 (선택)</p>
+          {supplierDebits.length === 0 ? (
+            <p className="mt-2 text-xs text-text-secondary">
+              선택한 공급처에 배정 가능한 미지급 차변이 없습니다.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-2">
+              {supplierDebits.map((debit) => (
+                <li
+                  key={debit.id}
+                  className="rounded-lg border border-line bg-canvas px-2 py-2"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-medium text-text-primary">
+                      {debit.transaction_date} · {debit.shipment_number ?? "직접거래"}
+                    </p>
+                    <p className="text-[11px] text-text-secondary">
+                      원금 {debit.amount_krw.toLocaleString("ko-KR")} / 기배정{" "}
+                      {debit.allocated_krw.toLocaleString("ko-KR")} / 잔액{" "}
+                      {debit.remaining_krw.toLocaleString("ko-KR")}
+                    </p>
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder={`배정금액 (최대 ${debit.remaining_krw.toLocaleString("ko-KR")})`}
+                    value={allocationInputs[debit.id] ?? ""}
+                    onChange={(event) => {
+                      const raw = event.target.value;
+                      if (!raw) {
+                        setAllocationInputs((prev) => {
+                          const next = { ...prev };
+                          delete next[debit.id];
+                          return next;
+                        });
+                        return;
+                      }
 
-        <label className="block">
-          <span className="mb-1 block text-xs font-semibold text-text-secondary">배정금액 (선택)</span>
-          <input
-            name="allocated_amount_krw"
-            type="number"
-            min="0"
-            step="1"
-            placeholder="미입력 시 지급금액 기준"
-            className="h-10 w-full rounded-lg border border-line bg-white px-3 text-sm"
-          />
-        </label>
+                      const parsed = Number(raw);
+                      if (!Number.isFinite(parsed) || parsed < 0) {
+                        return;
+                      }
+
+                      const nextValue = Math.min(
+                        Math.round(parsed),
+                        Math.round(debit.remaining_krw),
+                      );
+
+                      setAllocationInputs((prev) => ({
+                        ...prev,
+                        [debit.id]: String(nextValue),
+                      }));
+                    }}
+                    className="mt-2 h-9 w-full rounded-lg border border-line bg-white px-3 text-sm"
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="mt-2 grid gap-1 text-xs md:grid-cols-3">
+            <p className="text-text-secondary">
+              지급금액: {totalAmount.toLocaleString("ko-KR")}
+            </p>
+            <p className="text-text-secondary">
+              배정합계: {allocatedTotal.toLocaleString("ko-KR")}
+            </p>
+            <p className={overAllocated ? "font-semibold text-warning" : "text-text-secondary"}>
+              미배정: {unallocatedAmount.toLocaleString("ko-KR")}
+            </p>
+          </div>
+        </div>
 
         <label className="block md:col-span-2">
           <span className="mb-1 block text-xs font-semibold text-text-secondary">비고</span>
@@ -166,9 +247,9 @@ export function PaymentForm({ suppliers, openDebits }: PaymentFormProps) {
         </label>
       </div>
 
-      {selectedTarget ? (
-        <p className="mt-2 text-xs text-text-secondary">
-          선택 차변 잔액: {selectedTarget.remaining_krw.toLocaleString("ko-KR")}
+      {overAllocated ? (
+        <p className="mt-3 rounded-xl border border-warning/30 bg-orange-50 px-3 py-2 text-xs text-warning">
+          배정 합계가 지급금액을 초과했습니다. 배정 금액을 조정해 주세요.
         </p>
       ) : null}
 

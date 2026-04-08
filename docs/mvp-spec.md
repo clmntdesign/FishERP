@@ -39,6 +39,9 @@
 
 - Shipment FX must be positive when provided
 - Stock = intake - sales - mortality
-- Negative stock blocked in app logic before write
+- Negative stock blocked at DB transaction boundary (write-time hard stop)
 - AP debits linked to shipment on intake confirmation
+- Supplier payment supports optional multi-shipment split allocations
+- Shipment has mandatory accountable owner (`assigned_buyer_id`)
+- Shipment financial inputs (line items/costs) are editable only in `pending_customs`
 - AP credits and write-offs reduce supplier outstanding
